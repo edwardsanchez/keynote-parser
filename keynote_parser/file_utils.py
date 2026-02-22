@@ -40,9 +40,9 @@ def file_reader(path, progress=True):
 
 
 def zip_file_reader(path, progress=True):
-    zipfile = ZipFile(path, "r")
+    zipfile = open_zip_file_for_read(path)
     for _file in zipfile.filelist:
-        _file.filename = _file.filename.encode("cp437").decode("utf-8")
+        _file.filename = normalize_zip_filename(_file.filename)
     iterator = sorted(zipfile.filelist, key=lambda x: x.filename)
     if progress:
         iterator = tqdm(iterator)
@@ -53,6 +53,22 @@ def zip_file_reader(path, progress=True):
             iterator.set_description("Reading {}...".format(zipinfo.filename))
         with zipfile.open(zipinfo) as handle:
             yield (zipinfo.filename, handle)
+
+
+def normalize_zip_filename(filename):
+    """Best-effort fix for legacy cp437/utf-8 mojibake in zip member names."""
+    try:
+        return filename.encode("cp437").decode("utf-8")
+    except UnicodeError:
+        return filename
+
+
+def open_zip_file_for_read(path):
+    """Open zip using UTF-8 metadata first, then fall back for legacy archives/Python."""
+    try:
+        return ZipFile(path, "r", metadata_encoding="utf-8")
+    except (TypeError, UnicodeError):
+        return ZipFile(path, "r")
 
 
 def directory_reader(path, progress=True):

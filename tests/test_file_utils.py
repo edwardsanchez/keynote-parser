@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import zipfile
+
 from keynote_parser import codec, file_utils
 
 SIMPLE_FILENAME = "./tests/data/simple-oneslide.key"
@@ -112,3 +114,18 @@ def test_unicode_asset_filename():
             file_utils.process_file(filename, handle, sink)
 
     assert len(results) == 1
+
+
+def test_zip_reader_preserves_non_cp437_filenames(tmp_path):
+    archive_path = tmp_path / "non-cp437.key"
+    expected_name = "Data/Accommodations Italy – Booking.com-16227.png"
+    payload = b"image-bytes"
+
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr(expected_name, payload)
+
+    reader = file_utils.zip_file_reader(str(archive_path), progress=False)
+    result = {filename: handle.read() for filename, handle in reader}
+
+    assert expected_name in result
+    assert result[expected_name] == payload

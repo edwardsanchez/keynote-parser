@@ -150,12 +150,6 @@ private struct SlideRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    if row.isSkipped {
-                        SlideRowTag(text: "Skipped", tint: .orange)
-                    }
-                }
-
                 if row.isEditable {
                     TextEditor(text: $row.editedNoteText)
                         .font(.body)
@@ -166,13 +160,20 @@ private struct SlideRowView: View {
                                 .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
                         )
                         .overlay(alignment: .topTrailing) {
-                            if row.isDirty {
-                                Text("Edited")
-                                    .font(.caption.weight(.semibold))
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(Color.accentColor.opacity(0.14), in: Capsule())
-                                    .padding(8)
+                            if row.isSkipped || row.isDirty {
+                                HStack(spacing: 8) {
+                                    if row.isSkipped {
+                                        SlideRowTag(text: "Skipped", tint: .orange)
+                                    }
+                                    if row.isDirty {
+                                        Text("Edited")
+                                            .font(.caption.weight(.semibold))
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 3)
+                                            .background(Color.accentColor.opacity(0.14), in: Capsule())
+                                    }
+                                }
+                                .padding(8)
                             }
                         }
                 } else {
@@ -189,8 +190,13 @@ private struct SlideRowView: View {
                     .padding(12)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(alignment: .topTrailing) {
-                        SlideRowTag(text: "Read-Only", tint: .secondary)
-                            .padding(8)
+                        HStack(spacing: 8) {
+                            if row.isSkipped {
+                                SlideRowTag(text: "Skipped", tint: .orange)
+                            }
+                            SlideRowTag(text: "Read-Only", tint: .secondary)
+                        }
+                        .padding(8)
                     }
                 }
             }

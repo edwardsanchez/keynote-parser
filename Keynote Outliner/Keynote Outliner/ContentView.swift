@@ -38,7 +38,7 @@ struct ContentView: View {
                 Button {
                     viewModel.showSkippedSlides.toggle()
                 } label: {
-                    Image(systemName: viewModel.showSkippedSlides ? "eye.slash" : "eye")
+                    Image(systemName: viewModel.showSkippedSlides ? "rectangle.compress.vertical" : "rectangle.expand.vertical")
                 }
                 .help(viewModel.showSkippedSlides ? "Hide Skipped Slides" : "Show Skipped Slides")
                 .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)

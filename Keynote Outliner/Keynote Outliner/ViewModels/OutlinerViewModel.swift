@@ -91,7 +91,12 @@ final class OutlinerViewModel {
     var rows: [SlideRowModel] = []
     var showSkippedSlides = false
     private(set) var recentFiles: [URL] = []
-    private(set) var isBusy = false
+    private(set) var isBusy = false {
+        didSet {
+            guard oldValue, !isBusy else { return }
+            resumeDeferredExternalOpenIfNeeded()
+        }
+    }
     var statusMessage = "Open a Keynote file to begin."
     var errorMessage: String?
 
@@ -120,6 +125,7 @@ final class OutlinerViewModel {
     private var monitoredFileState: ObservedFileState?
     private var hasPromptedForExternalUpdate = false
     private var fileMonitorTask: Task<Void, Never>?
+    private var deferredExternalOpenURL: URL?
 
     private let backend = KeynoteBackendClient()
 
@@ -151,6 +157,32 @@ final class OutlinerViewModel {
             return
         }
         loadDocument(from: url)
+    }
+
+    @discardableResult
+    func handleExternalOpenRequest(_ urls: [URL]) -> Bool {
+        guard
+            let url = urls
+                .map(\.standardizedFileURL)
+                .first(where: isSupportedKeynoteURL)
+        else {
+            return false
+        }
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            statusMessage = "Unable to open \(url.lastPathComponent)."
+            errorMessage = "The selected file no longer exists on disk."
+            return false
+        }
+
+        if isBusy {
+            deferredExternalOpenURL = url
+            statusMessage = "Queued \(url.lastPathComponent) to open next."
+            return true
+        }
+
+        openRecent(url)
+        return true
     }
 
     func clearRecents() {
@@ -365,6 +397,12 @@ final class OutlinerViewModel {
     private func openPanelAndLoad() {
         guard let selectedURL = runOpenPanel() else { return }
         loadDocument(from: selectedURL)
+    }
+
+    private func resumeDeferredExternalOpenIfNeeded() {
+        guard let deferredExternalOpenURL else { return }
+        self.deferredExternalOpenURL = nil
+        openRecent(deferredExternalOpenURL)
     }
 
     private func refreshFromDisk() {
@@ -596,6 +634,11 @@ final class OutlinerViewModel {
             attributes: nil
         )
         return cache
+    }
+
+    private func isSupportedKeynoteURL(_ url: URL) -> Bool {
+        guard url.isFileURL else { return false }
+        return url.pathExtension.caseInsensitiveCompare("key") == .orderedSame
     }
 
     private func setCurrentFile(_ url: URL) {

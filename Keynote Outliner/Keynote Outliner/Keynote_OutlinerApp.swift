@@ -6,11 +6,48 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class KeynoteOutlinerAppDelegate: NSObject, NSApplicationDelegate {
-    weak var viewModel: OutlinerViewModel?
+    weak var viewModel: OutlinerViewModel? {
+        didSet {
+            flushPendingOpenRequestsIfNeeded()
+        }
+    }
+
+    private var pendingOpenURLs: [URL] = []
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         viewModel?.applicationShouldTerminate() ?? .terminateNow
+    }
+
+    func application(_ sender: NSApplication, openFile filename: String) -> Bool {
+        handleIncomingOpenRequests([URL(fileURLWithPath: filename)])
+    }
+
+    func application(_ sender: NSApplication, openFiles filenames: [String]) {
+        let urls = filenames.map { URL(fileURLWithPath: $0) }
+        let handled = handleIncomingOpenRequests(urls)
+        sender.reply(toOpenOrPrint: handled ? .success : .failure)
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        _ = handleIncomingOpenRequests(urls)
+    }
+
+    private func handleIncomingOpenRequests(_ urls: [URL]) -> Bool {
+        guard !urls.isEmpty else { return false }
+        guard let viewModel else {
+            pendingOpenURLs.append(contentsOf: urls)
+            return true
+        }
+        return viewModel.handleExternalOpenRequest(urls)
+    }
+
+    private func flushPendingOpenRequestsIfNeeded() {
+        guard let viewModel, !pendingOpenURLs.isEmpty else { return }
+        let queued = pendingOpenURLs
+        pendingOpenURLs.removeAll()
+        _ = viewModel.handleExternalOpenRequest(queued)
     }
 }
 

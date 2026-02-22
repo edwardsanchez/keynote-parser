@@ -75,7 +75,7 @@ struct Keynote_OutlinerApp: App {
                     viewModel.refresh()
                 }
                 .keyboardShortcut("r", modifiers: .command)
-                .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
+                .disabled(!viewModel.canRefresh)
             }
 
             CommandGroup(replacing: .appTermination) {

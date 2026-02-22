@@ -25,12 +25,36 @@ final class OutlinerViewModel {
         case cancel
     }
 
+    enum ExternalUpdateChoice {
+        case refresh
+        case later
+    }
+
     private struct PendingSaveContext {
         var inputURL: URL
         var outputURL: URL
         var continueWith: PendingAction?
         var setOutputAsCurrentFile: Bool
         var backupSourceURL: URL?
+    }
+
+    private struct ObservedFileState {
+        var mtime: Double
+        var size: Int
+        var inode: UInt64?
+
+        func differs(from other: Self) -> Bool {
+            if size != other.size {
+                return true
+            }
+            if abs(mtime - other.mtime) > 0.0005 {
+                return true
+            }
+            if let inode, let otherInode = other.inode, inode != otherInode {
+                return true
+            }
+            return false
+        }
     }
 
     private enum KeynoteReloadResult {
@@ -73,10 +97,12 @@ final class OutlinerViewModel {
 
     var isUnsavedDialogPresented = false
     var isConflictDialogPresented = false
+    var isExternalUpdateAlertPresented = false
     var conflictMessage = ""
 
     var hasOpenDocument: Bool { fileURL != nil }
     var hasUnsavedChanges: Bool { rows.contains { $0.isEditable && $0.isDirty } }
+    var canRefresh: Bool { hasOpenDocument && !isBusy && hasExternalFileUpdate }
     var canSave: Bool { hasOpenDocument && !isBusy && hasUnsavedChanges }
     var visibleRowIndices: [Int] {
         guard !showSkippedSlides else { return Array(rows.indices) }
@@ -89,10 +115,16 @@ final class OutlinerViewModel {
     private var pendingSaveContext: PendingSaveContext?
     private var latestConflicts: [SaveConflict] = []
     private var allowImmediateTermination = false
+    private(set) var hasExternalFileUpdate = false
+    private var monitoredFileURL: URL?
+    private var monitoredFileState: ObservedFileState?
+    private var hasPromptedForExternalUpdate = false
+    private var fileMonitorTask: Task<Void, Never>?
 
     private let backend = KeynoteBackendClient()
 
     init() {
+        startFileMonitor()
         loadPersistedRecents()
         Task { [weak self] in
             self?.reopenLastOpenedFileIfAvailable()
@@ -133,6 +165,10 @@ final class OutlinerViewModel {
             statusMessage = "Open a Keynote file first."
             return
         }
+        guard hasExternalFileUpdate else {
+            statusMessage = "Already up to date."
+            return
+        }
         if hasUnsavedChanges {
             pendingWindowCloseAction = nil
             pendingAction = .refresh
@@ -140,6 +176,16 @@ final class OutlinerViewModel {
             return
         }
         refreshFromDisk()
+    }
+
+    func handleExternalUpdateChoice(_ choice: ExternalUpdateChoice) {
+        isExternalUpdateAlertPresented = false
+        switch choice {
+        case .refresh:
+            refresh()
+        case .later:
+            break
+        }
     }
 
     func save() {
@@ -339,6 +385,7 @@ final class OutlinerViewModel {
                     self.snapshot = loaded
                     self.rows = loaded.slides
                     self.setCurrentFile(URL(fileURLWithPath: loaded.file.url))
+                    self.updateMonitorBaseline(from: loaded.file)
                     self.pendingAction = nil
                     self.pendingWindowCloseAction = nil
                     self.pendingSaveContext = nil
@@ -446,6 +493,7 @@ final class OutlinerViewModel {
             if context.setOutputAsCurrentFile {
                 setCurrentFile(context.outputURL)
             }
+            var updatedFingerprint: DeckFileFingerprint?
             if var snapshot {
                 if let updatedFile = response.file {
                     snapshot.file = updatedFile
@@ -454,6 +502,12 @@ final class OutlinerViewModel {
                 }
                 snapshot.slides = rows
                 self.snapshot = snapshot
+                updatedFingerprint = snapshot.file
+            } else if let updatedFile = response.file {
+                updatedFingerprint = updatedFile
+            }
+            if let updatedFingerprint {
+                updateMonitorBaseline(from: updatedFingerprint)
             }
             let count = response.savedRows ?? 0
             statusMessage = "Saved \(count) edited slide\(count == 1 ? "" : "s")."
@@ -492,6 +546,8 @@ final class OutlinerViewModel {
             conflictMessage = [baseMessage, summary].filter { !$0.isEmpty }.joined(separator: "\n")
             isConflictDialogPresented = true
             statusMessage = "Save conflict detected."
+            hasExternalFileUpdate = true
+            hasPromptedForExternalUpdate = true
             isBusy = false
 
         case .error:
@@ -586,6 +642,84 @@ final class OutlinerViewModel {
             return
         }
         loadDocument(from: url)
+    }
+
+    private func startFileMonitor() {
+        fileMonitorTask?.cancel()
+        fileMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self else { return }
+                self.pollForExternalFileUpdates()
+            }
+        }
+    }
+
+    private func pollForExternalFileUpdates() {
+        guard !isBusy else { return }
+        guard let monitoredFileURL, let monitoredFileState else { return }
+
+        if hasExternalFileUpdate {
+            presentExternalUpdateAlertIfNeeded()
+            return
+        }
+
+        guard let current = Self.readObservedFileState(at: monitoredFileURL) else {
+            markExternalFileUpdateDetected(message: "The file was moved or removed on disk.")
+            return
+        }
+
+        if current.differs(from: monitoredFileState) {
+            markExternalFileUpdateDetected(message: "The file was updated on disk.")
+        }
+    }
+
+    private func updateMonitorBaseline(from fingerprint: DeckFileFingerprint) {
+        let normalizedURL = URL(fileURLWithPath: fingerprint.url).standardizedFileURL
+        monitoredFileURL = normalizedURL
+        monitoredFileState =
+            Self.readObservedFileState(at: normalizedURL)
+            ?? ObservedFileState(mtime: fingerprint.mtime, size: fingerprint.size, inode: nil)
+        hasExternalFileUpdate = false
+        hasPromptedForExternalUpdate = false
+        isExternalUpdateAlertPresented = false
+    }
+
+    private func markExternalFileUpdateDetected(message: String) {
+        guard !hasExternalFileUpdate else {
+            presentExternalUpdateAlertIfNeeded()
+            return
+        }
+        hasExternalFileUpdate = true
+        hasPromptedForExternalUpdate = false
+        statusMessage = message
+        presentExternalUpdateAlertIfNeeded()
+    }
+
+    private func presentExternalUpdateAlertIfNeeded() {
+        guard hasExternalFileUpdate else { return }
+        guard !hasPromptedForExternalUpdate else { return }
+        guard !isBusy else { return }
+        guard !isUnsavedDialogPresented else { return }
+        guard !isConflictDialogPresented else { return }
+        isExternalUpdateAlertPresented = true
+        hasPromptedForExternalUpdate = true
+    }
+
+    private static func readObservedFileState(at url: URL) -> ObservedFileState? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) else {
+            return nil
+        }
+        guard let modified = attributes[.modificationDate] as? Date else {
+            return nil
+        }
+        let size = (attributes[.size] as? NSNumber)?.intValue ?? -1
+        let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+        return ObservedFileState(
+            mtime: modified.timeIntervalSince1970,
+            size: size,
+            inode: inode
+        )
     }
 
     private func backupTargetIfNeeded(inputURL: URL, outputURL: URL) -> URL? {

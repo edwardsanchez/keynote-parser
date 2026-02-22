@@ -24,8 +24,8 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .help("Refresh (⌘R)")
-                .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
+                .help("Refresh from Disk (⌘R)")
+                .disabled(!viewModel.canRefresh)
 
                 Button {
                     viewModel.save()
@@ -66,6 +66,16 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) { viewModel.handleConflictAction(.cancel) }
         } message: {
             Text(viewModel.conflictMessage)
+        }
+        .confirmationDialog(
+            "The file was updated on disk.",
+            isPresented: $viewModel.isExternalUpdateAlertPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Refresh") { viewModel.handleExternalUpdateChoice(.refresh) }
+            Button("Later", role: .cancel) { viewModel.handleExternalUpdateChoice(.later) }
+        } message: {
+            Text("Do you want to refresh and load the latest version?")
         }
         .alert(
             "Error",

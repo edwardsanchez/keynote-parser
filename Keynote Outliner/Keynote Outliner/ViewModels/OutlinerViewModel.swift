@@ -11,7 +11,8 @@ import UniformTypeIdentifiers
 @MainActor
 final class OutlinerViewModel: ObservableObject {
     enum PendingAction {
-        case open
+        case openPanel
+        case openRecent(URL)
         case refresh
     }
 
@@ -28,8 +29,15 @@ final class OutlinerViewModel: ObservableObject {
         var setOutputAsCurrentFile: Bool
     }
 
+    private enum PersistenceKeys {
+        static let recentFiles = "KeynoteOutlinerRecentFiles"
+        static let lastOpenedFile = "KeynoteOutlinerLastOpenedFile"
+        static let maxRecents = 12
+    }
+
     @Published private(set) var fileURL: URL?
     @Published var rows: [SlideRowModel] = []
+    @Published private(set) var recentFiles: [URL] = []
     @Published private(set) var isBusy = false
     @Published var statusMessage = "Open a Keynote file to begin."
     @Published var errorMessage: String?
@@ -48,14 +56,37 @@ final class OutlinerViewModel: ObservableObject {
 
     private let backend = KeynoteBackendClient()
 
+    init() {
+        loadPersistedRecents()
+        Task { [weak self] in
+            self?.reopenLastOpenedFileIfAvailable()
+        }
+    }
+
     func openFile() {
         guard !isBusy else { return }
         if hasUnsavedChanges {
-            pendingAction = .open
+            pendingAction = .openPanel
             isUnsavedDialogPresented = true
             return
         }
         openPanelAndLoad()
+    }
+
+    func openRecent(_ url: URL) {
+        guard !isBusy else { return }
+        if hasUnsavedChanges {
+            pendingAction = .openRecent(url)
+            isUnsavedDialogPresented = true
+            return
+        }
+        loadDocument(from: url)
+    }
+
+    func clearRecents() {
+        recentFiles = []
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: PersistenceKeys.recentFiles)
     }
 
     func refresh() {
@@ -175,8 +206,10 @@ final class OutlinerViewModel: ObservableObject {
 
     private func executePendingAction(_ action: PendingAction) {
         switch action {
-        case .open:
+        case .openPanel:
             openPanelAndLoad()
+        case .openRecent(let url):
+            loadDocument(from: url)
         case .refresh:
             refreshFromDisk()
         }
@@ -204,7 +237,7 @@ final class OutlinerViewModel: ObservableObject {
                 await MainActor.run {
                     self.snapshot = loaded
                     self.rows = loaded.slides
-                    self.fileURL = URL(fileURLWithPath: loaded.file.url)
+                    self.setCurrentFile(URL(fileURLWithPath: loaded.file.url))
                     self.pendingAction = nil
                     self.pendingSaveContext = nil
                     self.latestConflicts = []
@@ -286,7 +319,7 @@ final class OutlinerViewModel: ObservableObject {
                 rows[index].baseNoteText = rows[index].editedNoteText
             }
             if context.setOutputAsCurrentFile {
-                fileURL = context.outputURL
+                setCurrentFile(context.outputURL)
             }
             if var snapshot {
                 if let updatedFile = response.file {
@@ -362,5 +395,51 @@ final class OutlinerViewModel: ObservableObject {
             attributes: nil
         )
         return cache
+    }
+
+    private func setCurrentFile(_ url: URL) {
+        let normalized = url.standardizedFileURL
+        fileURL = normalized
+        addRecentFile(normalized)
+        UserDefaults.standard.set(normalized.path, forKey: PersistenceKeys.lastOpenedFile)
+    }
+
+    private func addRecentFile(_ url: URL) {
+        let normalized = url.standardizedFileURL
+        recentFiles.removeAll { $0.standardizedFileURL.path == normalized.path }
+        recentFiles.insert(normalized, at: 0)
+        if recentFiles.count > PersistenceKeys.maxRecents {
+            recentFiles = Array(recentFiles.prefix(PersistenceKeys.maxRecents))
+        }
+        persistRecents()
+        NSDocumentController.shared.noteNewRecentDocumentURL(normalized)
+    }
+
+    private func persistRecents() {
+        let paths = recentFiles.map(\.path)
+        UserDefaults.standard.set(paths, forKey: PersistenceKeys.recentFiles)
+    }
+
+    private func loadPersistedRecents() {
+        let defaults = UserDefaults.standard
+        let rawPaths = defaults.stringArray(forKey: PersistenceKeys.recentFiles) ?? []
+        let existing = rawPaths
+            .map { URL(fileURLWithPath: $0).standardizedFileURL }
+            .filter { FileManager.default.fileExists(atPath: $0.path) }
+        recentFiles = Array(existing.prefix(PersistenceKeys.maxRecents))
+        persistRecents()
+    }
+
+    private func reopenLastOpenedFileIfAvailable() {
+        guard fileURL == nil, rows.isEmpty else { return }
+        guard let path = UserDefaults.standard.string(forKey: PersistenceKeys.lastOpenedFile) else {
+            return
+        }
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            UserDefaults.standard.removeObject(forKey: PersistenceKeys.lastOpenedFile)
+            return
+        }
+        loadDocument(from: url)
     }
 }

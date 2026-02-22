@@ -21,6 +21,26 @@ struct Keynote_OutlinerApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
                 .disabled(viewModel.isBusy)
+
+                Menu("Open Recent") {
+                    if viewModel.recentFiles.isEmpty {
+                        Text("No Recent Files")
+                    } else {
+                        ForEach(viewModel.recentFiles, id: \.path) { url in
+                            Button(url.lastPathComponent) {
+                                viewModel.openRecent(url)
+                            }
+                            .help(url.path)
+                            .disabled(viewModel.isBusy)
+                        }
+                        Divider()
+                        Button("Clear Menu") {
+                            viewModel.clearRecents()
+                        }
+                        .disabled(viewModel.isBusy)
+                    }
+                }
+                .disabled(viewModel.isBusy)
             }
 
             CommandGroup(replacing: .saveItem) {

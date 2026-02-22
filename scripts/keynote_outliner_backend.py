@@ -40,12 +40,16 @@ class BackendError(RuntimeError):
 @dataclass
 class SlideRecord:
     index: int
+    keynote_index: int | None
     slide_node_id: str
     slide_id: str
-    slide_filename: str
+    slide_filename: str | None
     note_archive_id: str | None
     note_storage_id: str | None
     note_text: str
+    is_skipped: bool
+    is_editable: bool
+    load_issue: str | None
     thumbnail_data_id: str | None
     thumbnail_filename: str | None
     slide_dict: dict[str, Any] | None
@@ -180,6 +184,7 @@ def collect_slide_records(
 
     data_id_map = build_data_id_map(entries)
     rows: list[SlideRecord] = []
+    keynote_index_counter = 0
     for index, ref in enumerate(slide_node_refs, start=1):
         slide_node_id = str(ref.get("identifier", ""))
         if not slide_node_id:
@@ -187,6 +192,12 @@ def collect_slide_records(
         if slide_node_id not in document_by_id:
             continue
         node_obj = get_first_object(document_by_id[slide_node_id])
+        is_skipped = bool(node_obj.get("isSkipped", False))
+        keynote_index = None
+        if not is_skipped:
+            keynote_index_counter += 1
+            keynote_index = keynote_index_counter
+
         slide_id = str(node_obj.get("slide", {}).get("identifier", ""))
         if not slide_id:
             continue
@@ -198,50 +209,70 @@ def collect_slide_records(
                 thumb_id = str(thumb_id_value)
 
         slide_filename = f"Index/Slide-{slide_id}.iwa"
-        if slide_filename not in entries:
-            # Skip template/unsupported slides without source archive.
-            continue
-
-        slide_dict = decode_iwa(entries, slide_filename)
-        slide_by_id, slide_by_type = build_archive_lookup(slide_dict)
-        slide_candidates = slide_by_type.get("KN.SlideArchive")
-        if not slide_candidates:
-            continue
-        slide_obj = slide_candidates[0][1]
         note_archive_id = None
         note_storage_id = None
         note_text = ""
         note_storage_obj = None
+        is_editable = True
+        load_issue = None
+        slide_dict = None
 
-        note_ref = slide_obj.get("note", {}).get("identifier")
-        if note_ref is not None:
-            note_archive_id = str(note_ref)
-            note_archive = slide_by_id.get(note_archive_id)
-            if note_archive:
-                note_obj = get_first_object(note_archive)
-                storage_ref = note_obj.get("containedStorage", {}).get("identifier")
-                if storage_ref is not None:
-                    note_storage_id = str(storage_ref)
-                    storage_archive = slide_by_id.get(note_storage_id)
-                    if storage_archive:
-                        note_storage_obj = get_first_object(storage_archive)
-                        text_list = note_storage_obj.get("text")
-                        if isinstance(text_list, list) and text_list:
-                            note_text = str(text_list[0])
+        if slide_filename not in entries:
+            load_issue = "missing-slide-archive"
+            is_editable = False
+            slide_filename = None
+        else:
+            try:
+                decoded_slide = decode_iwa(entries, slide_filename)
+                slide_by_id, slide_by_type = build_archive_lookup(decoded_slide)
+                slide_candidates = slide_by_type.get("KN.SlideArchive")
+                if not slide_candidates:
+                    is_editable = False
+                    load_issue = "slide-archive-decode-failed"
+                else:
+                    slide_obj = slide_candidates[0][1]
+                    note_ref = slide_obj.get("note", {}).get("identifier")
+                    if note_ref is not None:
+                        note_archive_id = str(note_ref)
+                        note_archive = slide_by_id.get(note_archive_id)
+                        if note_archive:
+                            note_obj = get_first_object(note_archive)
+                            storage_ref = note_obj.get("containedStorage", {}).get(
+                                "identifier"
+                            )
+                            if storage_ref is not None:
+                                note_storage_id = str(storage_ref)
+                                storage_archive = slide_by_id.get(note_storage_id)
+                                if storage_archive:
+                                    note_storage_obj = get_first_object(storage_archive)
+                                    text_list = note_storage_obj.get("text")
+                                    if isinstance(text_list, list) and text_list:
+                                        note_text = str(text_list[0])
+                if include_mutable_refs and is_editable:
+                    slide_dict = decoded_slide
+            except Exception:
+                is_editable = False
+                load_issue = "slide-archive-decode-failed"
+                slide_dict = None
+                note_storage_obj = None
 
         rows.append(
             SlideRecord(
                 index=index,
+                keynote_index=keynote_index,
                 slide_node_id=slide_node_id,
                 slide_id=slide_id,
                 slide_filename=slide_filename,
                 note_archive_id=note_archive_id,
                 note_storage_id=note_storage_id,
                 note_text=note_text,
+                is_skipped=is_skipped,
+                is_editable=is_editable,
+                load_issue=load_issue,
                 thumbnail_data_id=thumb_id,
                 thumbnail_filename=data_id_map.get(thumb_id) if thumb_id else None,
                 slide_dict=slide_dict if include_mutable_refs else None,
-                note_storage_object=note_storage_obj if include_mutable_refs else None,
+                note_storage_object=note_storage_obj if include_mutable_refs and is_editable else None,
             )
         )
     return rows
@@ -375,11 +406,15 @@ def load_command(input_path: str, cache_dir: str) -> dict[str, Any]:
         slides.append(
             {
                 "index": row.index,
+                "keynoteIndex": row.keynote_index,
                 "slideNodeId": row.slide_node_id,
                 "slideId": row.slide_id,
                 "noteArchiveId": row.note_archive_id,
                 "noteStorageId": row.note_storage_id,
                 "noteText": row.note_text,
+                "isSkipped": row.is_skipped,
+                "isEditable": row.is_editable,
+                "loadIssue": row.load_issue,
                 "thumbnailPath": thumbnail_paths.get(row.slide_node_id),
             }
         )
@@ -423,7 +458,7 @@ def build_conflicts(
             conflicts.append(
                 {
                     "slideId": slide_id,
-                    "index": record.index,
+                    "index": record.keynote_index or record.index,
                     "reason": reason,
                     "baseText": base,
                     "localText": local,
@@ -492,7 +527,7 @@ def save_command(
                 unresolved_conflicts.append(
                     {
                         "slideId": slide_id,
-                        "index": record.index,
+                        "index": record.keynote_index or record.index,
                         "reason": "merge-required",
                         "baseText": base,
                         "localText": local,

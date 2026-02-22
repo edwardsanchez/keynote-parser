@@ -27,6 +27,31 @@ final class OutlinerViewModel: ObservableObject {
         var outputURL: URL
         var continueWith: PendingAction?
         var setOutputAsCurrentFile: Bool
+        var backupSourceURL: URL?
+    }
+
+    private enum KeynoteReloadResult {
+        case reloaded
+        case notOpen
+        case skippedDueToUnsavedKeynoteChanges
+        case failed(String)
+    }
+
+    private enum BackupError: LocalizedError {
+        case sourceMissing(String)
+        case cannotRotate(String)
+        case cannotCopy(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .sourceMissing(let path):
+                return "Backup source file missing: \(path)"
+            case .cannotRotate(let message):
+                return "Failed to rotate backups: \(message)"
+            case .cannotCopy(let message):
+                return "Failed to create backup copy: \(message)"
+            }
+        }
     }
 
     private enum PersistenceKeys {
@@ -266,6 +291,19 @@ final class OutlinerViewModel: ObservableObject {
             return
         }
 
+        var backupSourceURL: URL?
+        let candidate = backupTargetIfNeeded(inputURL: inputURL, outputURL: outputURL)
+        if let candidate {
+            do {
+                try createRollingBackups(for: candidate)
+                backupSourceURL = candidate
+            } catch {
+                statusMessage = "Save aborted: backup failed."
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+
         let state = SaveStatePayload(
             baseFile: snapshot.file,
             rows: rows.map {
@@ -285,7 +323,8 @@ final class OutlinerViewModel: ObservableObject {
             inputURL: inputURL,
             outputURL: outputURL,
             continueWith: continueWith,
-            setOutputAsCurrentFile: setOutputAsCurrentFile
+            setOutputAsCurrentFile: setOutputAsCurrentFile,
+            backupSourceURL: backupSourceURL
         )
         pendingSaveContext = context
         let cacheURL = Self.cacheDirectoryURL()
@@ -332,8 +371,28 @@ final class OutlinerViewModel: ObservableObject {
             }
             let count = response.savedRows ?? 0
             statusMessage = "Saved \(count) edited slide\(count == 1 ? "" : "s")."
+            if context.backupSourceURL != nil {
+                statusMessage += " Backup updated."
+            }
             pendingSaveContext = nil
             isBusy = false
+
+            let savedURL = context.outputURL
+            Task {
+                let reloadResult = await Self.reloadKeynoteDocumentIfOpen(savedURL)
+                await MainActor.run {
+                    switch reloadResult {
+                    case .reloaded:
+                        self.statusMessage += " Reloaded in Keynote."
+                    case .notOpen:
+                        break
+                    case .skippedDueToUnsavedKeynoteChanges:
+                        self.statusMessage += " Keynote file has unsaved changes; skipped reload."
+                    case .failed(let message):
+                        self.statusMessage += " Keynote reload failed (\(message))."
+                    }
+                }
+            }
 
             if let action = context.continueWith {
                 pendingAction = nil
@@ -441,5 +500,132 @@ final class OutlinerViewModel: ObservableObject {
             return
         }
         loadDocument(from: url)
+    }
+
+    private func backupTargetIfNeeded(inputURL: URL, outputURL: URL) -> URL? {
+        let fm = FileManager.default
+        let input = inputURL.standardizedFileURL
+        let output = outputURL.standardizedFileURL
+        if input.path == output.path {
+            return input
+        }
+        if fm.fileExists(atPath: output.path) {
+            return output
+        }
+        return nil
+    }
+
+    private func backupURL(for originalURL: URL, generation: Int) -> URL {
+        let directory = originalURL.deletingLastPathComponent()
+        let ext = originalURL.pathExtension.isEmpty ? "key" : originalURL.pathExtension
+        let stem = originalURL.deletingPathExtension().lastPathComponent
+        return directory
+            .appendingPathComponent("\(stem).backup\(generation)")
+            .appendingPathExtension(ext)
+    }
+
+    private func createRollingBackups(for sourceURL: URL) throws {
+        let fm = FileManager.default
+        let source = sourceURL.standardizedFileURL
+        guard fm.fileExists(atPath: source.path) else {
+            throw BackupError.sourceMissing(source.path)
+        }
+
+        let backup1 = backupURL(for: source, generation: 1)
+        let backup2 = backupURL(for: source, generation: 2)
+
+        do {
+            if fm.fileExists(atPath: backup2.path) {
+                try fm.removeItem(at: backup2)
+            }
+            if fm.fileExists(atPath: backup1.path) {
+                try fm.moveItem(at: backup1, to: backup2)
+            }
+        } catch {
+            throw BackupError.cannotRotate(error.localizedDescription)
+        }
+
+        do {
+            try fm.copyItem(at: source, to: backup1)
+        } catch {
+            throw BackupError.cannotCopy(error.localizedDescription)
+        }
+    }
+
+    private static func reloadKeynoteDocumentIfOpen(_ url: URL) async -> KeynoteReloadResult {
+        await Task.detached(priority: .utility) {
+            let script = """
+            on run argv
+                set targetPath to item 1 of argv
+                tell application "System Events"
+                    set runningApps to name of every process
+                end tell
+                if runningApps does not contain "Keynote" then
+                    return "not-open"
+                end if
+                tell application "Keynote"
+                    set targetDoc to missing value
+                    repeat with d in documents
+                        set docPath to POSIX path of (file of d as alias)
+                        if docPath is targetPath then
+                            set targetDoc to d
+                            exit repeat
+                        end if
+                    end repeat
+                    if targetDoc is missing value then
+                        return "not-open"
+                    end if
+                    if modified of targetDoc then
+                        return "dirty"
+                    end if
+                    close targetDoc saving no
+                    open POSIX file targetPath
+                    return "reloaded"
+                end tell
+            end run
+            """
+
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-", url.path]
+            let stdin = Pipe()
+            let stdout = Pipe()
+            let stderr = Pipe()
+            process.standardInput = stdin
+            process.standardOutput = stdout
+            process.standardError = stderr
+
+            do {
+                try process.run()
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+
+            if let data = script.data(using: .utf8) {
+                stdin.fileHandleForWriting.write(data)
+            }
+            stdin.fileHandleForWriting.closeFile()
+            process.waitUntilExit()
+
+            let out = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let err = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if process.terminationStatus != 0 {
+                return .failed(err.isEmpty ? "osascript exit \(process.terminationStatus)" : err)
+            }
+
+            switch out {
+            case "reloaded":
+                return .reloaded
+            case "dirty":
+                return .skippedDueToUnsavedKeynoteChanges
+            case "not-open":
+                return .notOpen
+            default:
+                return .failed(out.isEmpty ? "unknown result" : out)
+            }
+        }.value
     }
 }

@@ -39,11 +39,15 @@ actor KeynoteBackendClient {
 
     private struct LoadSlidePayload: Decodable {
         var index: Int
+        var keynoteIndex: Int?
         var slideNodeId: String
         var slideId: String
         var noteArchiveId: String?
         var noteStorageId: String?
         var noteText: String
+        var isSkipped: Bool
+        var isEditable: Bool
+        var loadIssue: String?
         var thumbnailPath: String?
     }
 
@@ -85,12 +89,16 @@ actor KeynoteBackendClient {
             slides: slides.map {
                 SlideRowModel(
                     index: $0.index,
+                    keynoteIndex: $0.keynoteIndex,
                     slideNodeId: $0.slideNodeId,
                     slideId: $0.slideId,
                     noteArchiveId: $0.noteArchiveId,
                     noteStorageId: $0.noteStorageId,
                     baseNoteText: $0.noteText,
                     editedNoteText: $0.noteText,
+                    isSkipped: $0.isSkipped,
+                    isEditable: $0.isEditable,
+                    loadIssue: $0.loadIssue,
                     thumbnailPath: $0.thumbnailPath
                 )
             }

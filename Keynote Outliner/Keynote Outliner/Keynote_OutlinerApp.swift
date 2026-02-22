@@ -3,16 +3,29 @@
 //  Keynote Outliner
 //
 
+import AppKit
 import SwiftUI
+
+final class KeynoteOutlinerAppDelegate: NSObject, NSApplicationDelegate {
+    weak var viewModel: OutlinerViewModel?
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        viewModel?.applicationShouldTerminate() ?? .terminateNow
+    }
+}
 
 @main
 struct Keynote_OutlinerApp: App {
-    @StateObject private var viewModel = OutlinerViewModel()
+    @NSApplicationDelegateAdaptor(KeynoteOutlinerAppDelegate.self) private var appDelegate
+    @State private var viewModel = OutlinerViewModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: viewModel)
                 .frame(minWidth: 980, minHeight: 640)
+                .onAppear {
+                    appDelegate.viewModel = viewModel
+                }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -63,6 +76,13 @@ struct Keynote_OutlinerApp: App {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
+            }
+
+            CommandGroup(replacing: .appTermination) {
+                Button("Quit Keynote Outliner") {
+                    viewModel.requestQuitApplicationFromUser()
+                }
+                .keyboardShortcut("q", modifiers: .command)
             }
         }
     }

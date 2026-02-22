@@ -14,12 +14,16 @@ struct DeckFileFingerprint: Codable, Equatable, Sendable {
 
 struct SlideRowModel: Identifiable, Equatable, Sendable {
     var index: Int
+    var keynoteIndex: Int?
     var slideNodeId: String
     var slideId: String
     var noteArchiveId: String?
     var noteStorageId: String?
     var baseNoteText: String
     var editedNoteText: String
+    var isSkipped: Bool
+    var isEditable: Bool
+    var loadIssue: String?
     var thumbnailPath: String?
 
     var id: String { slideId }

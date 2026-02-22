@@ -7,7 +7,7 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject var viewModel: OutlinerViewModel
+    @Bindable var viewModel: OutlinerViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,6 +35,14 @@ struct ContentView: View {
                     Image(systemName: "square.and.arrow.down")
                 }
                 .help("Save (⌘S)")
+                .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
+
+                Button {
+                    viewModel.showSkippedSlides.toggle()
+                } label: {
+                    Image(systemName: viewModel.showSkippedSlides ? "eye.slash" : "eye")
+                }
+                .help(viewModel.showSkippedSlides ? "Hide Skipped Slides" : "Show Skipped Slides")
                 .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
             }
         }
@@ -83,6 +91,7 @@ struct ContentView: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        .background(WindowCloseBridge(viewModel: viewModel))
     }
 
     private var header: some View {
@@ -113,8 +122,8 @@ struct ContentView: View {
     private var editorList: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                ForEach($viewModel.rows) { $row in
-                    SlideRowView(row: $row)
+                ForEach(viewModel.visibleRowIndices, id: \.self) { index in
+                    SlideRowView(row: $viewModel.rows[index])
                 }
             }
             .padding(16)
@@ -129,7 +138,7 @@ private struct SlideRowView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
             HStack(alignment: .bottom, spacing: 10) {
-                Text("\(row.index)")
+                Text(row.keynoteIndex.map(String.init) ?? "")
                     .font(.title3)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -141,24 +150,49 @@ private struct SlideRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                TextEditor(text: $row.editedNoteText)
-                    .font(.body)
-                    .frame(minHeight: 120)
-                    .padding(4)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
-                    )
-                    .overlay(alignment: .topTrailing) {
-                        if row.isDirty {
-                            Text("Edited")
-                                .font(.caption.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.accentColor.opacity(0.14), in: Capsule())
-                                .padding(8)
+                HStack(spacing: 8) {
+                    if row.isSkipped {
+                        SlideRowTag(text: "Skipped", tint: .orange)
+                    }
+                }
+
+                if row.isEditable {
+                    TextEditor(text: $row.editedNoteText)
+                        .font(.body)
+                        .frame(minHeight: 120)
+                        .padding(4)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
+                        )
+                        .overlay(alignment: .topTrailing) {
+                            if row.isDirty {
+                                Text("Edited")
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.accentColor.opacity(0.14), in: Capsule())
+                                    .padding(8)
+                            }
+                        }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("This slide can't be edited.")
+                            .font(.body.weight(.semibold))
+                        if let issue = issueDescription {
+                            Text(issue)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
+                    .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+                    .padding(12)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(alignment: .topTrailing) {
+                        SlideRowTag(text: "Read-Only", tint: .secondary)
+                            .padding(8)
+                    }
+                }
             }
         }
         .padding(12)
@@ -170,6 +204,33 @@ private struct SlideRowView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
         )
+    }
+
+    private var issueDescription: String? {
+        switch row.loadIssue {
+        case "missing-slide-archive":
+            return "Slide archive is missing from this file."
+        case "slide-archive-decode-failed":
+            return "Slide archive could not be decoded."
+        case nil:
+            return nil
+        default:
+            return "Slide archive is unavailable."
+        }
+    }
+}
+
+private struct SlideRowTag: View {
+    var text: String
+    var tint: Color
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.14), in: Capsule())
+            .foregroundStyle(tint)
     }
 }
 

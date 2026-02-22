@@ -4,16 +4,19 @@
 //
 
 import AppKit
-import Combine
 import Foundation
+import Observation
 import UniformTypeIdentifiers
 
+@Observable
 @MainActor
-final class OutlinerViewModel: ObservableObject {
+final class OutlinerViewModel {
     enum PendingAction {
         case openPanel
         case openRecent(URL)
         case refresh
+        case closeWindow
+        case quitApplication
     }
 
     enum UnsavedChoice {
@@ -60,24 +63,31 @@ final class OutlinerViewModel: ObservableObject {
         static let maxRecents = 12
     }
 
-    @Published private(set) var fileURL: URL?
-    @Published var rows: [SlideRowModel] = []
-    @Published private(set) var recentFiles: [URL] = []
-    @Published private(set) var isBusy = false
-    @Published var statusMessage = "Open a Keynote file to begin."
-    @Published var errorMessage: String?
+    private(set) var fileURL: URL?
+    var rows: [SlideRowModel] = []
+    var showSkippedSlides = false
+    private(set) var recentFiles: [URL] = []
+    private(set) var isBusy = false
+    var statusMessage = "Open a Keynote file to begin."
+    var errorMessage: String?
 
-    @Published var isUnsavedDialogPresented = false
-    @Published var isConflictDialogPresented = false
-    @Published var conflictMessage = ""
+    var isUnsavedDialogPresented = false
+    var isConflictDialogPresented = false
+    var conflictMessage = ""
 
     var hasOpenDocument: Bool { fileURL != nil }
-    var hasUnsavedChanges: Bool { rows.contains(where: \.isDirty) }
+    var hasUnsavedChanges: Bool { rows.contains { $0.isEditable && $0.isDirty } }
+    var visibleRowIndices: [Int] {
+        guard !showSkippedSlides else { return Array(rows.indices) }
+        return rows.indices.filter { !rows[$0].isSkipped }
+    }
 
     private var snapshot: DeckSnapshot?
     private var pendingAction: PendingAction?
+    private var pendingWindowCloseAction: (() -> Void)?
     private var pendingSaveContext: PendingSaveContext?
     private var latestConflicts: [SaveConflict] = []
+    private var allowImmediateTermination = false
 
     private let backend = KeynoteBackendClient()
 
@@ -91,6 +101,7 @@ final class OutlinerViewModel: ObservableObject {
     func openFile() {
         guard !isBusy else { return }
         if hasUnsavedChanges {
+            pendingWindowCloseAction = nil
             pendingAction = .openPanel
             isUnsavedDialogPresented = true
             return
@@ -101,6 +112,7 @@ final class OutlinerViewModel: ObservableObject {
     func openRecent(_ url: URL) {
         guard !isBusy else { return }
         if hasUnsavedChanges {
+            pendingWindowCloseAction = nil
             pendingAction = .openRecent(url)
             isUnsavedDialogPresented = true
             return
@@ -121,6 +133,7 @@ final class OutlinerViewModel: ObservableObject {
             return
         }
         if hasUnsavedChanges {
+            pendingWindowCloseAction = nil
             pendingAction = .refresh
             isUnsavedDialogPresented = true
             return
@@ -161,11 +174,58 @@ final class OutlinerViewModel: ObservableObject {
         )
     }
 
+    func interceptWindowCloseIfNeeded(closeAction: @escaping () -> Void) -> Bool {
+        guard !isBusy else {
+            statusMessage = "Please wait for the current operation to finish."
+            return true
+        }
+        if hasUnsavedChanges {
+            pendingWindowCloseAction = closeAction
+            pendingAction = .closeWindow
+            isUnsavedDialogPresented = true
+            return true
+        }
+        return false
+    }
+
+    func requestQuitApplicationFromUser() {
+        guard !isBusy else {
+            statusMessage = "Please wait for the current operation to finish."
+            return
+        }
+        if hasUnsavedChanges {
+            pendingWindowCloseAction = nil
+            pendingAction = .quitApplication
+            isUnsavedDialogPresented = true
+            return
+        }
+        performImmediateQuit()
+    }
+
+    func applicationShouldTerminate() -> NSApplication.TerminateReply {
+        if allowImmediateTermination {
+            allowImmediateTermination = false
+            return .terminateNow
+        }
+        if isBusy {
+            statusMessage = "Please wait for the current operation to finish."
+            return .terminateCancel
+        }
+        if hasUnsavedChanges {
+            pendingWindowCloseAction = nil
+            pendingAction = .quitApplication
+            isUnsavedDialogPresented = true
+            return .terminateCancel
+        }
+        return .terminateNow
+    }
+
     func resolveUnsavedDialog(_ choice: UnsavedChoice) {
         defer {
             isUnsavedDialogPresented = false
             if choice != .save {
                 pendingAction = nil
+                pendingWindowCloseAction = nil
             }
         }
         guard let action = pendingAction else { return }
@@ -215,17 +275,20 @@ final class OutlinerViewModel: ObservableObject {
             )
         case .refresh:
             pendingAction = nil
+            pendingWindowCloseAction = nil
             pendingSaveContext = nil
             refreshFromDisk()
         case .cancel:
             statusMessage = "Save cancelled due to conflict."
             pendingAction = nil
+            pendingWindowCloseAction = nil
             pendingSaveContext = nil
         }
     }
 
     func setEditedText(_ text: String, for id: SlideRowModel.ID) {
         guard let index = rows.firstIndex(where: { $0.id == id }) else { return }
+        guard rows[index].isEditable else { return }
         rows[index].editedNoteText = text
     }
 
@@ -237,7 +300,18 @@ final class OutlinerViewModel: ObservableObject {
             loadDocument(from: url)
         case .refresh:
             refreshFromDisk()
+        case .closeWindow:
+            let closeAction = pendingWindowCloseAction
+            pendingWindowCloseAction = nil
+            closeAction?()
+        case .quitApplication:
+            performImmediateQuit()
         }
+    }
+
+    private func performImmediateQuit() {
+        allowImmediateTermination = true
+        NSApplication.shared.terminate(nil)
     }
 
     private func openPanelAndLoad() {
@@ -264,9 +338,19 @@ final class OutlinerViewModel: ObservableObject {
                     self.rows = loaded.slides
                     self.setCurrentFile(URL(fileURLWithPath: loaded.file.url))
                     self.pendingAction = nil
+                    self.pendingWindowCloseAction = nil
                     self.pendingSaveContext = nil
                     self.latestConflicts = []
-                    self.statusMessage = "Loaded \(loaded.slides.count) slides from \(url.lastPathComponent)."
+                    let skippedCount = loaded.slides.filter(\.isSkipped).count
+                    let unavailableCount = loaded.slides.filter { !$0.isEditable }.count
+                    var statusParts = ["Loaded \(loaded.slides.count) slides from \(url.lastPathComponent)."]
+                    if skippedCount > 0 {
+                        statusParts.append("\(skippedCount) skipped slide\(skippedCount == 1 ? "" : "s") hidden.")
+                    }
+                    if unavailableCount > 0 {
+                        statusParts.append("\(unavailableCount) slide\(unavailableCount == 1 ? "" : "s") cannot be edited.")
+                    }
+                    self.statusMessage = statusParts.joined(separator: " ")
                     self.isBusy = false
                 }
             } catch {
@@ -306,7 +390,7 @@ final class OutlinerViewModel: ObservableObject {
 
         let state = SaveStatePayload(
             baseFile: snapshot.file,
-            rows: rows.map {
+            rows: rows.filter(\.isEditable).map {
                 SaveRowState(
                     slideId: $0.slideId,
                     baseText: $0.baseNoteText,

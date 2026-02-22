@@ -35,7 +35,7 @@ struct ContentView: View {
                     Image(systemName: "square.and.arrow.down")
                 }
                 .help("Save (⌘S)")
-                .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
+                .disabled(!viewModel.canSave)
 
                 Button {
                     viewModel.showSkippedSlides.toggle()

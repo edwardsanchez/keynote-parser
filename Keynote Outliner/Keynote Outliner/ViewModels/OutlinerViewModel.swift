@@ -77,6 +77,7 @@ final class OutlinerViewModel {
 
     var hasOpenDocument: Bool { fileURL != nil }
     var hasUnsavedChanges: Bool { rows.contains { $0.isEditable && $0.isDirty } }
+    var canSave: Bool { hasOpenDocument && !isBusy && hasUnsavedChanges }
     var visibleRowIndices: [Int] {
         guard !showSkippedSlides else { return Array(rows.indices) }
         return rows.indices.filter { !rows[$0].isSkipped }
@@ -147,6 +148,7 @@ final class OutlinerViewModel {
             statusMessage = "Open a Keynote file first."
             return
         }
+        guard hasUnsavedChanges else { return }
         beginSave(
             inputURL: currentURL,
             outputURL: currentURL,

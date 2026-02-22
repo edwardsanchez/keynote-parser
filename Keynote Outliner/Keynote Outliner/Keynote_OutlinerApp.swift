@@ -61,7 +61,7 @@ struct Keynote_OutlinerApp: App {
                     viewModel.save()
                 }
                 .keyboardShortcut("s", modifiers: .command)
-                .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
+                .disabled(!viewModel.canSave)
 
                 Button("Save As…") {
                     viewModel.saveAs()

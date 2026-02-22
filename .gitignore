@@ -118,3 +118,4 @@ dmypy.json
 .pyre/
 
 uv.lock
+/Keynote Outliner/Keynote Outliner.xcodeproj/project.xcworkspace/xcuserdata/edwardsanchez.xcuserdatad/UserInterfaceState.xcuserstate

@@ -10,9 +10,7 @@ struct ContentView: View {
     @Bindable var viewModel: OutlinerViewModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
+        Group {
             if viewModel.rows.isEmpty {
                 emptyState
             } else {
@@ -91,20 +89,13 @@ struct ContentView: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
-        .background(WindowCloseBridge(viewModel: viewModel))
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(viewModel.fileURL?.lastPathComponent ?? "No file open")
-                .font(.headline)
-            Text(viewModel.statusMessage)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .background(
+            WindowCloseBridge(
+                viewModel: viewModel,
+                title: viewModel.fileURL?.lastPathComponent ?? "Keynote Outliner",
+                subtitle: viewModel.statusMessage
+            )
+        )
     }
 
     private var emptyState: some View {

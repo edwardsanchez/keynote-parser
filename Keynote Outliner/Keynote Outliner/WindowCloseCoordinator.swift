@@ -55,25 +55,39 @@ final class WindowCloseCoordinator: NSObject, NSWindowDelegate {
 
 struct WindowCloseBridge: NSViewRepresentable {
     var viewModel: OutlinerViewModel
+    var title: String
+    var subtitle: String
 
     final class Coordinator {
         private let closeCoordinator: WindowCloseCoordinator
+        private var title: String
+        private var subtitle: String
 
-        init(viewModel: OutlinerViewModel) {
+        init(viewModel: OutlinerViewModel, title: String, subtitle: String) {
             closeCoordinator = WindowCloseCoordinator(viewModel: viewModel)
+            self.title = title
+            self.subtitle = subtitle
         }
 
-        func update(viewModel: OutlinerViewModel) {
+        func update(viewModel: OutlinerViewModel, title: String, subtitle: String) {
             closeCoordinator.update(viewModel: viewModel)
+            self.title = title
+            self.subtitle = subtitle
         }
 
         func attach(to window: NSWindow) {
             closeCoordinator.attach(to: window)
+            applyTitlebar(to: window)
+        }
+
+        private func applyTitlebar(to window: NSWindow) {
+            window.title = title
+            window.subtitle = subtitle
         }
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(viewModel: viewModel)
+        Coordinator(viewModel: viewModel, title: title, subtitle: subtitle)
     }
 
     func makeNSView(context: Context) -> NSView {
@@ -86,7 +100,7 @@ struct WindowCloseBridge: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.update(viewModel: viewModel)
+        context.coordinator.update(viewModel: viewModel, title: title, subtitle: subtitle)
         DispatchQueue.main.async { [weak nsView] in
             guard let window = nsView?.window else { return }
             context.coordinator.attach(to: window)

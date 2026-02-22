@@ -128,22 +128,19 @@ private struct SlideRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
-            ThumbnailCell(path: row.thumbnailPath)
-                .frame(width: 230, height: 130)
+            HStack(alignment: .bottom, spacing: 10) {
+                Text("\(row.index)")
+                    .font(.title3)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, alignment: .trailing)
+                    .padding(.bottom, 4)
+
+                ThumbnailCell(path: row.thumbnailPath)
+                    .frame(width: 230, height: 130)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Slide \(row.index)")
-                        .font(.headline)
-                    if row.isDirty {
-                        Text("Edited")
-                            .font(.caption.weight(.semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.accentColor.opacity(0.14), in: Capsule())
-                    }
-                }
-
                 TextEditor(text: $row.editedNoteText)
                     .font(.body)
                     .frame(minHeight: 120)
@@ -152,6 +149,16 @@ private struct SlideRowView: View {
                         RoundedRectangle(cornerRadius: 8)
                             .strokeBorder(Color.secondary.opacity(0.25), lineWidth: 1)
                     )
+                    .overlay(alignment: .topTrailing) {
+                        if row.isDirty {
+                            Text("Edited")
+                                .font(.caption.weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.accentColor.opacity(0.14), in: Capsule())
+                                .padding(8)
+                        }
+                    }
             }
         }
         .padding(12)

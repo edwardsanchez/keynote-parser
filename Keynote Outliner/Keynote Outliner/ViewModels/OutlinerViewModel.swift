@@ -109,6 +109,7 @@ final class OutlinerViewModel {
     var hasUnsavedChanges: Bool { rows.contains { $0.isEditable && $0.isDirty } }
     var canRefresh: Bool { hasOpenDocument && !isBusy && hasExternalFileUpdate }
     var canSave: Bool { hasOpenDocument && !isBusy && hasUnsavedChanges }
+    var canCopyAllNotes: Bool { !isBusy && !visibleRowIndices.isEmpty }
     var visibleRowIndices: [Int] {
         guard !showSkippedSlides else { return Array(rows.indices) }
         return rows.indices.filter { !rows[$0].isSkipped }
@@ -252,6 +253,30 @@ final class OutlinerViewModel {
             continueWith: nil,
             setOutputAsCurrentFile: true
         )
+    }
+
+    func copyAllVisibleNotesToClipboard() {
+        guard !isBusy else { return }
+
+        let indices = visibleRowIndices
+        guard !indices.isEmpty else {
+            statusMessage = "No visible notes to copy."
+            return
+        }
+
+        let notes = indices.map { rows[$0].editedNoteText }.joined(separator: "\n\n")
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+
+        guard pasteboard.setString(notes, forType: .string) else {
+            statusMessage = "Failed to copy notes."
+            errorMessage = "The clipboard could not be updated."
+            return
+        }
+
+        let count = indices.count
+        statusMessage = "Copied notes for \(count) visible slide\(count == 1 ? "" : "s")."
+        errorMessage = nil
     }
 
     func interceptWindowCloseIfNeeded(closeAction: @escaping () -> Void) -> Bool {

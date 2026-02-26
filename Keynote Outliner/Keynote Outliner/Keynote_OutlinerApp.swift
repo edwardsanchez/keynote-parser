@@ -107,6 +107,13 @@ struct Keynote_OutlinerApp: App {
                 .disabled(!viewModel.hasOpenDocument || viewModel.isBusy)
             }
 
+            CommandGroup(after: .pasteboard) {
+                Button("Copy All Notes") {
+                    viewModel.copyAllVisibleNotesToClipboard()
+                }
+                .disabled(!viewModel.canCopyAllNotes)
+            }
+
             CommandMenu("Document") {
                 Button("Refresh") {
                     viewModel.refresh()

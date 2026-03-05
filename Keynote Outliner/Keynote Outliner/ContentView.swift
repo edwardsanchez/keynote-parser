@@ -155,6 +155,7 @@ struct ContentView: View {
 private struct SlideRowView: View {
     @Binding var row: SlideRowModel
     var noteFontSize: CGFloat
+    @State private var editorHeight: CGFloat = 120
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -172,9 +173,13 @@ private struct SlideRowView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 if row.isEditable {
-                    TextEditor(text: $row.editedNoteText)
-                        .font(.system(size: noteFontSize))
-                        .frame(minHeight: editorMinHeight)
+                    AutoSizingNoteEditor(
+                        text: $row.editedNoteText,
+                        fontSize: noteFontSize,
+                        minHeight: editorMinHeight,
+                        measuredHeight: $editorHeight
+                    )
+                        .frame(height: max(editorMinHeight, editorHeight))
                         .padding(4)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
@@ -221,6 +226,12 @@ private struct SlideRowView: View {
                     }
                 }
             }
+            .onAppear {
+                editorHeight = max(editorHeight, editorMinHeight)
+            }
+            .onChange(of: noteFontSize) { _, _ in
+                editorHeight = max(editorHeight, editorMinHeight)
+            }
         }
     }
 
@@ -239,6 +250,150 @@ private struct SlideRowView: View {
 
     private var editorMinHeight: CGFloat {
         max(120, 120 * (noteFontSize / OutlinerViewModel.defaultNoteFontSize))
+    }
+}
+
+private struct AutoSizingNoteEditor: NSViewRepresentable {
+    @Binding var text: String
+    var fontSize: CGFloat
+    var minHeight: CGFloat
+    @Binding var measuredHeight: CGFloat
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            text: $text,
+            measuredHeight: $measuredHeight,
+            minHeight: minHeight
+        )
+    }
+
+    func makeNSView(context: Context) -> GrowingNoteTextView {
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+
+        let textContainer = NSTextContainer(
+            size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        )
+        textContainer.widthTracksTextView = true
+        textContainer.heightTracksTextView = false
+        layoutManager.addTextContainer(textContainer)
+
+        let textView = GrowingNoteTextView(frame: .zero, textContainer: textContainer)
+        textView.delegate = context.coordinator
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.minSize = NSSize.zero
+        textView.drawsBackground = false
+        textView.textContainerInset = NSSize(width: 0, height: 6)
+        textView.font = NSFont.systemFont(ofSize: fontSize)
+        textView.string = text
+        textView.onFrameSizeDidChange = { [weak coordinator = context.coordinator] in
+            coordinator?.recalculateHeight()
+        }
+
+        context.coordinator.textView = textView
+        context.coordinator.recalculateHeight()
+        return textView
+    }
+
+    func updateNSView(_ nsView: GrowingNoteTextView, context: Context) {
+        context.coordinator.updateBindings(
+            text: $text,
+            measuredHeight: $measuredHeight,
+            minHeight: minHeight
+        )
+
+        if nsView.string != text {
+            context.coordinator.isApplyingExternalText = true
+            nsView.string = text
+            context.coordinator.isApplyingExternalText = false
+        }
+
+        if nsView.font?.pointSize != fontSize {
+            nsView.font = NSFont.systemFont(ofSize: fontSize)
+        }
+
+        context.coordinator.recalculateHeight()
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var text: Binding<String>
+        var measuredHeight: Binding<CGFloat>
+        var minHeight: CGFloat
+        weak var textView: GrowingNoteTextView?
+        var isApplyingExternalText = false
+
+        init(
+            text: Binding<String>,
+            measuredHeight: Binding<CGFloat>,
+            minHeight: CGFloat
+        ) {
+            self.text = text
+            self.measuredHeight = measuredHeight
+            self.minHeight = minHeight
+        }
+
+        func updateBindings(
+            text: Binding<String>,
+            measuredHeight: Binding<CGFloat>,
+            minHeight: CGFloat
+        ) {
+            self.text = text
+            self.measuredHeight = measuredHeight
+            self.minHeight = minHeight
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView else { return }
+            if !isApplyingExternalText, text.wrappedValue != textView.string {
+                text.wrappedValue = textView.string
+            }
+            recalculateHeight()
+        }
+
+        func recalculateHeight() {
+            guard
+                let textView,
+                let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else {
+                return
+            }
+
+            let width = max(textView.bounds.width - (textView.textContainerInset.width * 2), 1)
+            if abs(textContainer.containerSize.width - width) > 0.5 {
+                textContainer.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+            }
+
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let calculatedHeight = ceil(usedRect.height + (textView.textContainerInset.height * 2))
+            let targetHeight = max(minHeight, calculatedHeight)
+
+            guard abs(measuredHeight.wrappedValue - targetHeight) > 0.5 else { return }
+            DispatchQueue.main.async { [measuredHeight] in
+                measuredHeight.wrappedValue = targetHeight
+            }
+        }
+    }
+}
+
+private final class GrowingNoteTextView: NSTextView {
+    var onFrameSizeDidChange: (() -> Void)?
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        onFrameSizeDidChange?()
     }
 }
 

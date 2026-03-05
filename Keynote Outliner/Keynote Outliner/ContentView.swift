@@ -7,7 +7,10 @@ import AppKit
 import SwiftUI
 
 struct ContentView: View {
+    static let editorScrollCoordinateSpace = "EditorListScrollSpace"
+
     @Bindable var viewModel: OutlinerViewModel
+    var zoomCoordinator: NotesZoomCoordinator
 
     var body: some View {
         Group {
@@ -124,10 +127,26 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(spacing: 12) {
                 ForEach(viewModel.visibleRowIndices, id: \.self) { index in
-                    SlideRowView(row: $viewModel.rows[index])
+                    SlideRowView(
+                        row: $viewModel.rows[index],
+                        noteFontSize: viewModel.noteFontSize
+                    )
+                    .background(
+                        RowMinYReporter(rowID: viewModel.rows[index].id)
+                    )
                 }
             }
             .padding(16)
+            .background(
+                OuterScrollViewBridge { scrollView in
+                    zoomCoordinator.register(scrollView: scrollView)
+                }
+                .frame(width: 0, height: 0)
+            )
+        }
+        .coordinateSpace(name: Self.editorScrollCoordinateSpace)
+        .onPreferenceChange(RowMinYPreferenceKey.self) { values in
+            zoomCoordinator.updateRowMinY(values)
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -135,6 +154,7 @@ struct ContentView: View {
 
 private struct SlideRowView: View {
     @Binding var row: SlideRowModel
+    var noteFontSize: CGFloat
 
     var body: some View {
         HStack(alignment: .top, spacing: 14) {
@@ -153,8 +173,8 @@ private struct SlideRowView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if row.isEditable {
                     TextEditor(text: $row.editedNoteText)
-                        .font(.body)
-                        .frame(minHeight: 120)
+                        .font(.system(size: noteFontSize))
+                        .frame(minHeight: editorMinHeight)
                         .padding(4)
                         .overlay(
                             RoundedRectangle(cornerRadius: 8)
@@ -216,6 +236,84 @@ private struct SlideRowView: View {
             return "Slide archive is unavailable."
         }
     }
+
+    private var editorMinHeight: CGFloat {
+        max(120, 120 * (noteFontSize / OutlinerViewModel.defaultNoteFontSize))
+    }
+}
+
+private struct RowMinYPreferenceKey: PreferenceKey {
+    static var defaultValue: [String: CGFloat] = [:]
+
+    static func reduce(value: inout [String: CGFloat], nextValue: () -> [String: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct RowMinYReporter: View {
+    var rowID: String
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color.clear.preference(
+                key: RowMinYPreferenceKey.self,
+                value: [rowID: geometry.frame(in: .named(ContentView.editorScrollCoordinateSpace)).minY]
+            )
+        }
+    }
+}
+
+private struct OuterScrollViewBridge: NSViewRepresentable {
+    var onResolve: (NSScrollView) -> Void
+
+    func makeNSView(context: Context) -> FinderView {
+        FinderView(onResolve: onResolve)
+    }
+
+    func updateNSView(_ nsView: FinderView, context: Context) {
+        nsView.onResolve = onResolve
+        nsView.resolveIfPossible()
+    }
+
+    final class FinderView: NSView {
+        var onResolve: ((NSScrollView) -> Void)?
+        private weak var lastResolvedScrollView: NSScrollView?
+
+        init(onResolve: ((NSScrollView) -> Void)?) {
+            self.onResolve = onResolve
+            super.init(frame: .zero)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            resolveIfPossible()
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            resolveIfPossible()
+        }
+
+        override func layout() {
+            super.layout()
+            resolveIfPossible()
+        }
+
+        func resolveIfPossible() {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                guard let scrollView = self.enclosingScrollView else { return }
+                guard self.lastResolvedScrollView !== scrollView else { return }
+                self.lastResolvedScrollView = scrollView
+                self.onResolve?(scrollView)
+            }
+        }
+    }
 }
 
 private struct SlideRowTag: View {
@@ -267,6 +365,9 @@ private struct ThumbnailCell: View {
 }
 
 #Preview {
-    ContentView(viewModel: OutlinerViewModel())
+    ContentView(
+        viewModel: OutlinerViewModel(),
+        zoomCoordinator: NotesZoomCoordinator()
+    )
         .frame(width: 1000, height: 700)
 }

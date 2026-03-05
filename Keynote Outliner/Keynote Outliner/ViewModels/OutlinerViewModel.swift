@@ -11,6 +11,11 @@ import UniformTypeIdentifiers
 @Observable
 @MainActor
 final class OutlinerViewModel {
+    static let defaultNoteFontSize: CGFloat = 17
+    static let minNoteFontSize: CGFloat = 14
+    static let maxNoteFontSize: CGFloat = 30
+    static let noteFontStep: CGFloat = 1
+
     enum PendingAction {
         case openPanel
         case openRecent(URL)
@@ -84,12 +89,14 @@ final class OutlinerViewModel {
     private enum PersistenceKeys {
         static let recentFiles = "KeynoteOutlinerRecentFiles"
         static let lastOpenedFile = "KeynoteOutlinerLastOpenedFile"
+        static let noteFontSize = "KeynoteOutlinerNoteFontSize"
         static let maxRecents = 12
     }
 
     private(set) var fileURL: URL?
     var rows: [SlideRowModel] = []
     var showSkippedSlides = false
+    var noteFontSize: CGFloat = OutlinerViewModel.defaultNoteFontSize
     private(set) var recentFiles: [URL] = []
     private(set) var isBusy = false {
         didSet {
@@ -133,9 +140,18 @@ final class OutlinerViewModel {
     init() {
         startFileMonitor()
         loadPersistedRecents()
+        loadPersistedNoteFontSize()
         Task { [weak self] in
             self?.reopenLastOpenedFileIfAvailable()
         }
+    }
+
+    func increaseNoteFontSize() {
+        setNoteFontSize(noteFontSize + Self.noteFontStep)
+    }
+
+    func decreaseNoteFontSize() {
+        setNoteFontSize(noteFontSize - Self.noteFontStep)
     }
 
     func openFile() {
@@ -697,6 +713,28 @@ final class OutlinerViewModel {
             .filter { FileManager.default.fileExists(atPath: $0.path) }
         recentFiles = Array(existing.prefix(PersistenceKeys.maxRecents))
         persistRecents()
+    }
+
+    private func loadPersistedNoteFontSize() {
+        let defaults = UserDefaults.standard
+        guard let persisted = defaults.object(forKey: PersistenceKeys.noteFontSize) as? NSNumber else {
+            noteFontSize = Self.defaultNoteFontSize
+            return
+        }
+        let candidate = CGFloat(persisted.doubleValue)
+        noteFontSize = Self.clampNoteFontSize(candidate)
+    }
+
+    private func setNoteFontSize(_ value: CGFloat) {
+        let clamped = Self.clampNoteFontSize(value)
+        guard abs(clamped - noteFontSize) > 0.001 else { return }
+        noteFontSize = clamped
+        UserDefaults.standard.set(Double(clamped), forKey: PersistenceKeys.noteFontSize)
+    }
+
+    private static func clampNoteFontSize(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return defaultNoteFontSize }
+        return min(max(value, minNoteFontSize), maxNoteFontSize)
     }
 
     private func reopenLastOpenedFileIfAvailable() {

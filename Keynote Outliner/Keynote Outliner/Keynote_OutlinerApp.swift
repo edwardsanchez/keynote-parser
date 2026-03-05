@@ -55,10 +55,14 @@ final class KeynoteOutlinerAppDelegate: NSObject, NSApplicationDelegate {
 struct Keynote_OutlinerApp: App {
     @NSApplicationDelegateAdaptor(KeynoteOutlinerAppDelegate.self) private var appDelegate
     @State private var viewModel = OutlinerViewModel()
+    @State private var zoomCoordinator = NotesZoomCoordinator()
 
     var body: some Scene {
         WindowGroup {
-            ContentView(viewModel: viewModel)
+            ContentView(
+                viewModel: viewModel,
+                zoomCoordinator: zoomCoordinator
+            )
                 .frame(minWidth: 980, minHeight: 640)
                 .onAppear {
                     appDelegate.viewModel = viewModel
@@ -112,6 +116,20 @@ struct Keynote_OutlinerApp: App {
                     viewModel.copyAllVisibleNotesToClipboard()
                 }
                 .disabled(!viewModel.canCopyAllNotes)
+            }
+
+            CommandGroup(after: .toolbar) {
+                Button("Increase Note Font Size") {
+                    zoomCoordinator.performZoom(.increase, viewModel: viewModel)
+                }
+                .keyboardShortcut("=", modifiers: .command)
+                .disabled(viewModel.rows.isEmpty)
+
+                Button("Decrease Note Font Size") {
+                    zoomCoordinator.performZoom(.decrease, viewModel: viewModel)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+                .disabled(viewModel.rows.isEmpty)
             }
 
             CommandMenu("Document") {

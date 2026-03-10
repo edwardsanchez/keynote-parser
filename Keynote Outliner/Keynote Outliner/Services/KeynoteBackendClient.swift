@@ -32,6 +32,11 @@ enum BackendClientError: LocalizedError {
 }
 
 actor KeynoteBackendClient {
+    private struct ProcessCaptureFile {
+        let url: URL
+        let handle: FileHandle
+    }
+
     private enum DefaultsKeys {
         static let pythonPath = "KeynoteOutlinerPythonPath"
         static let scriptPath = "KeynoteOutlinerBackendScriptPath"
@@ -161,10 +166,17 @@ actor KeynoteBackendClient {
         environment["PYTHONWARNINGS"] = "ignore:KeynoteVersionWarning"
         process.environment = environment
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
-        process.standardOutput = stdoutPipe
-        process.standardError = stderrPipe
+        let stdoutCapture = try makeProcessCaptureFile(label: "stdout")
+        let stderrCapture = try makeProcessCaptureFile(label: "stderr")
+        process.standardOutput = stdoutCapture.handle
+        process.standardError = stderrCapture.handle
+
+        defer {
+            stdoutCapture.handle.closeFile()
+            stderrCapture.handle.closeFile()
+            try? FileManager.default.removeItem(at: stdoutCapture.url)
+            try? FileManager.default.removeItem(at: stderrCapture.url)
+        }
 
         do {
             try process.run()
@@ -173,8 +185,8 @@ actor KeynoteBackendClient {
         }
         process.waitUntilExit()
 
-        let stdout = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let stderr = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+        let stdout = try Data(contentsOf: stdoutCapture.url)
+        let stderr = try Data(contentsOf: stderrCapture.url)
         if process.terminationStatus != 0 {
             let stderrText = String(decoding: stderr, as: UTF8.self)
             let stdoutText = String(decoding: stdout, as: UTF8.self)
@@ -185,6 +197,29 @@ actor KeynoteBackendClient {
             )
         }
         return stdout
+    }
+
+    private func makeProcessCaptureFile(label: String) throws -> ProcessCaptureFile {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keynote-outliner-\(label)-\(UUID().uuidString)")
+            .appendingPathExtension("log")
+
+        let created = FileManager.default.createFile(atPath: url.path, contents: nil)
+        guard created else {
+            throw BackendClientError.failedToLaunch(
+                "Could not create temporary \(label) capture file."
+            )
+        }
+
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            return ProcessCaptureFile(url: url, handle: handle)
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw BackendClientError.failedToLaunch(
+                "Could not open temporary \(label) capture file: \(error.localizedDescription)"
+            )
+        }
     }
 
     private func resolvePythonExecutableURL() throws -> URL {

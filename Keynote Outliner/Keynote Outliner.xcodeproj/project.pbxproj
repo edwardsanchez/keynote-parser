@@ -8,6 +8,8 @@
 
 /* Begin PBXFileReference section */
 		6DF99B472F4A643900FD5D15 /* Keynote Outliner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Keynote Outliner.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E19F10022F4A643900FD5D15 /* Keynote OutlinerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Keynote OutlinerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		E19F20022F4A643900FD5D15 /* Keynote OutlinerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Keynote OutlinerUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +18,27 @@
 			path = "Keynote Outliner";
 			sourceTree = "<group>";
 		};
+		E19F10032F4A643900FD5D15 /* Keynote OutlinerTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Keynote OutlinerTests";
+			sourceTree = "<group>";
+		};
+		E19F20032F4A643900FD5D15 /* Keynote OutlinerUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Keynote OutlinerUITests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		6DF99B442F4A643900FD5D15 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E19F10042F4A643900FD5D15 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +52,8 @@
 			isa = PBXGroup;
 			children = (
 				6DF99B492F4A643900FD5D15 /* Keynote Outliner */,
+				E19F10032F4A643900FD5D15 /* Keynote OutlinerTests */,
+				E19F20032F4A643900FD5D15 /* Keynote OutlinerUITests */,
 				6DF99B482F4A643900FD5D15 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +62,8 @@
 			isa = PBXGroup;
 			children = (
 				6DF99B472F4A643900FD5D15 /* Keynote Outliner.app */,
+				E19F10022F4A643900FD5D15 /* Keynote OutlinerTests.xctest */,
+				E19F20022F4A643900FD5D15 /* Keynote OutlinerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +93,50 @@
 			productReference = 6DF99B472F4A643900FD5D15 /* Keynote Outliner.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E19F10052F4A643900FD5D15 /* Keynote OutlinerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E19F100B2F4A643900FD5D15 /* Build configuration list for PBXNativeTarget "Keynote OutlinerTests" */;
+			buildPhases = (
+				E19F10072F4A643900FD5D15 /* Sources */,
+				E19F10042F4A643900FD5D15 /* Frameworks */,
+				E19F10062F4A643900FD5D15 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E19F10082F4A643900FD5D15 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E19F10032F4A643900FD5D15 /* Keynote OutlinerTests */,
+			);
+			name = "Keynote OutlinerTests";
+			packageProductDependencies = (
+			);
+			productName = "Keynote OutlinerTests";
+			productReference = E19F10022F4A643900FD5D15 /* Keynote OutlinerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		E19F20052F4A643900FD5D15 /* Keynote OutlinerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E19F200A2F4A643900FD5D15 /* Build configuration list for PBXNativeTarget "Keynote OutlinerUITests" */;
+			buildPhases = (
+				E19F20062F4A643900FD5D15 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E19F20082F4A643900FD5D15 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E19F20032F4A643900FD5D15 /* Keynote OutlinerUITests */,
+			);
+			name = "Keynote OutlinerUITests";
+			packageProductDependencies = (
+			);
+			productName = "Keynote OutlinerUITests";
+			productReference = E19F20022F4A643900FD5D15 /* Keynote OutlinerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +149,14 @@
 				TargetAttributes = {
 					6DF99B462F4A643900FD5D15 = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					E19F10052F4A643900FD5D15 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 6DF99B462F4A643900FD5D15;
+					};
+					E19F20052F4A643900FD5D15 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = 6DF99B462F4A643900FD5D15;
 					};
 				};
 			};
@@ -100,12 +175,21 @@
 			projectRoot = "";
 			targets = (
 				6DF99B462F4A643900FD5D15 /* Keynote Outliner */,
+				E19F10052F4A643900FD5D15 /* Keynote OutlinerTests */,
+				E19F20052F4A643900FD5D15 /* Keynote OutlinerUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		6DF99B452F4A643900FD5D15 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E19F10062F4A643900FD5D15 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +206,51 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E19F10072F4A643900FD5D15 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E19F20062F4A643900FD5D15 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		E19F10012F4A643900FD5D15 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6DF99B3F2F4A643900FD5D15 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6DF99B462F4A643900FD5D15;
+			remoteInfo = "Keynote Outliner";
+		};
+		E19F20012F4A643900FD5D15 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6DF99B3F2F4A643900FD5D15 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6DF99B462F4A643900FD5D15;
+			remoteInfo = "Keynote Outliner";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		E19F10082F4A643900FD5D15 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6DF99B462F4A643900FD5D15 /* Keynote Outliner */;
+			targetProxy = E19F10012F4A643900FD5D15 /* PBXContainerItemProxy */;
+		};
+		E19F20082F4A643900FD5D15 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6DF99B462F4A643900FD5D15 /* Keynote Outliner */;
+			targetProxy = E19F20012F4A643900FD5D15 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		6DF99B502F4A643A00FD5D15 /* Debug */ = {
@@ -309,6 +437,100 @@
 			};
 			name = Release;
 		};
+		E19F10092F4A643900FD5D15 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V2D2TL57B8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.amorfati.Keynote-OutlinerTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keynote Outliner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Keynote Outliner";
+			};
+			name = Debug;
+		};
+		E19F100A2F4A643900FD5D15 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V2D2TL57B8;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.amorfati.Keynote-OutlinerTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Keynote Outliner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Keynote Outliner";
+			};
+			name = Release;
+		};
+		E19F20092F4A643900FD5D15 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V2D2TL57B8;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.amorfati.Keynote-OutlinerUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = "Keynote Outliner";
+			};
+			name = Debug;
+		};
+		E19F200B2F4A643900FD5D15 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = V2D2TL57B8;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.2;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "app.amorfati.Keynote-OutlinerUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_TARGET_NAME = "Keynote Outliner";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -326,6 +548,24 @@
 			buildConfigurations = (
 				6DF99B532F4A643A00FD5D15 /* Debug */,
 				6DF99B542F4A643A00FD5D15 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E19F100B2F4A643900FD5D15 /* Build configuration list for PBXNativeTarget "Keynote OutlinerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E19F10092F4A643900FD5D15 /* Debug */,
+				E19F100A2F4A643900FD5D15 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E19F200A2F4A643900FD5D15 /* Build configuration list for PBXNativeTarget "Keynote OutlinerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E19F20092F4A643900FD5D15 /* Debug */,
+				E19F200B2F4A643900FD5D15 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

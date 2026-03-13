@@ -7,12 +7,13 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class KeynoteOutlinerAppDelegate: NSObject, NSApplicationDelegate {
+final class KeynoteOutlinerAppDelegate: NSObject, NSApplicationDelegate, NSUserInterfaceValidations {
     weak var viewModel: OutlinerViewModel? {
         didSet {
             flushPendingOpenRequestsIfNeeded()
         }
     }
+    weak var findController: NotesFindController?
 
     private var pendingOpenURLs: [URL] = []
 
@@ -32,6 +33,18 @@ final class KeynoteOutlinerAppDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         _ = handleIncomingOpenRequests(urls)
+    }
+
+    @objc
+    func performTextFinderAction(_ sender: Any?) {
+        _ = findController?.performAction(for: sender)
+    }
+
+    func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        guard item.action == #selector(performTextFinderAction(_:)) else {
+            return true
+        }
+        return findController?.validateAction(for: item) ?? false
     }
 
     private func handleIncomingOpenRequests(_ urls: [URL]) -> Bool {
@@ -56,16 +69,34 @@ struct Keynote_OutlinerApp: App {
     @NSApplicationDelegateAdaptor(KeynoteOutlinerAppDelegate.self) private var appDelegate
     @State private var viewModel = OutlinerViewModel()
     @State private var zoomCoordinator = NotesZoomCoordinator()
+    @State private var findController = NotesFindController()
 
     var body: some Scene {
         WindowGroup {
             ContentView(
                 viewModel: viewModel,
-                zoomCoordinator: zoomCoordinator
+                zoomCoordinator: zoomCoordinator,
+                findController: findController
             )
                 .frame(minWidth: 980, minHeight: 640)
                 .onAppear {
                     appDelegate.viewModel = viewModel
+                    appDelegate.findController = findController
+                    findController.configure(
+                        applyEditedText: { text, rowID in
+                            viewModel.setEditedText(text, for: rowID)
+                        },
+                        setStatusMessage: { message in
+                            viewModel.statusMessage = message
+                        },
+                        updateDebugState: { selectedRowID, globalRange, pendingRevealRowID in
+                            viewModel.updateFindDebugState(
+                                selectedRowID: selectedRowID,
+                                globalRange: globalRange,
+                                pendingRevealRowID: pendingRevealRowID
+                            )
+                        }
+                    )
                 }
         }
         .commands {
@@ -112,6 +143,38 @@ struct Keynote_OutlinerApp: App {
             }
 
             CommandGroup(after: .pasteboard) {
+                Menu("Find") {
+                    Button("Find…") {
+                        findController.performAction(.showFindInterface)
+                    }
+                    .keyboardShortcut("f", modifiers: .command)
+
+                    Button("Find and Replace…") {
+                        findController.performAction(.showReplaceInterface)
+                    }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
+
+                    Button("Use Selection for Find") {
+                        findController.performAction(.setSearchString)
+                    }
+                    .keyboardShortcut("e", modifiers: .command)
+
+                    Divider()
+
+                    Button("Find Next") {
+                        findController.performAction(.nextMatch)
+                    }
+                    .keyboardShortcut("g", modifiers: .command)
+
+                    Button("Find Previous") {
+                        findController.performAction(.previousMatch)
+                    }
+                    .keyboardShortcut("G", modifiers: [.command, .shift])
+                }
+                .disabled(viewModel.visibleRowIndices.isEmpty)
+
+                Divider()
+
                 Button("Copy All Notes") {
                     viewModel.copyAllVisibleNotesToClipboard()
                 }

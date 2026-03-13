@@ -11,6 +11,7 @@ struct ContentView: View {
 
     @Bindable var viewModel: OutlinerViewModel
     var zoomCoordinator: NotesZoomCoordinator
+    var findController: NotesFindController
 
     var body: some View {
         Group {
@@ -102,6 +103,12 @@ struct ContentView: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            if viewModel.isUITestMode {
+                UITestDiagnosticsPanel(viewModel: viewModel)
+                    .padding(12)
+            }
+        }
         .background(
             WindowCloseBridge(
                 viewModel: viewModel,
@@ -124,24 +131,36 @@ struct ContentView: View {
     }
 
     private var editorList: some View {
-        ScrollView {
-            LazyVStack(spacing: 12) {
-                ForEach(viewModel.visibleRowIndices, id: \.self) { index in
-                    SlideRowView(
-                        row: $viewModel.rows[index],
-                        noteFontSize: viewModel.noteFontSize
-                    )
-                    .background(
-                        RowMinYReporter(rowID: viewModel.rows[index].id)
-                    )
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 12) {
+                    ForEach(viewModel.visibleRowIndices, id: \.self) { index in
+                        SlideRowView(
+                            row: $viewModel.rows[index],
+                            noteFontSize: viewModel.noteFontSize,
+                            findController: findController
+                        )
+                        .id(viewModel.rows[index].id)
+                        .background(
+                            RowMinYReporter(rowID: viewModel.rows[index].id)
+                        )
+                    }
                 }
+                .padding(16)
+                .background(
+                    OuterScrollViewBridge { scrollView in
+                        zoomCoordinator.register(scrollView: scrollView)
+                        findController.registerFindBarContainer(scrollView)
+                    }
+                    .frame(width: 0, height: 0)
+                )
             }
-            .padding(16)
             .background(
-                OuterScrollViewBridge { scrollView in
-                    zoomCoordinator.register(scrollView: scrollView)
-                }
-                .frame(width: 0, height: 0)
+                FindControllerConfigurator(
+                    findController: findController,
+                    snapshots: visibleSearchableRows,
+                    proxy: proxy
+                )
             )
         }
         .coordinateSpace(name: Self.editorScrollCoordinateSpace)
@@ -150,11 +169,22 @@ struct ContentView: View {
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
+
+    private var visibleSearchableRows: [SearchableRowSnapshot] {
+        viewModel.visibleRowIndices.map { index in
+            SearchableRowSnapshot(
+                rowID: viewModel.rows[index].id,
+                text: viewModel.rows[index].editedNoteText,
+                isEditable: viewModel.rows[index].isEditable
+            )
+        }
+    }
 }
 
 private struct SlideRowView: View {
     @Binding var row: SlideRowModel
     var noteFontSize: CGFloat
+    var findController: NotesFindController
     @State private var editorHeight: CGFloat = 120
 
     var body: some View {
@@ -174,10 +204,14 @@ private struct SlideRowView: View {
             VStack(alignment: .leading, spacing: 8) {
                 if row.isEditable {
                     AutoSizingNoteEditor(
+                        rowID: row.id,
                         text: $row.editedNoteText,
                         fontSize: noteFontSize,
                         minHeight: editorMinHeight,
-                        measuredHeight: $editorHeight
+                        measuredHeight: $editorHeight,
+                        findController: findController,
+                        accessibilityIdentifier: "notes.editor.\(row.id)",
+                        accessibilityLabel: rowAccessibilityLabel
                     )
                         .frame(height: max(editorMinHeight, editorHeight))
                         .padding(4)
@@ -233,6 +267,7 @@ private struct SlideRowView: View {
                 editorHeight = max(editorHeight, editorMinHeight)
             }
         }
+        .accessibilityIdentifier("notes.row.\(row.id)")
     }
 
     private var issueDescription: String? {
@@ -251,19 +286,32 @@ private struct SlideRowView: View {
     private var editorMinHeight: CGFloat {
         max(120, 120 * (noteFontSize / OutlinerViewModel.defaultNoteFontSize))
     }
+
+    private var rowAccessibilityLabel: String {
+        if let keynoteIndex = row.keynoteIndex {
+            return "Slide \(keynoteIndex) notes editor"
+        }
+        return "Slide \(row.index) notes editor"
+    }
 }
 
 private struct AutoSizingNoteEditor: NSViewRepresentable {
+    var rowID: SlideRowModel.ID
     @Binding var text: String
     var fontSize: CGFloat
     var minHeight: CGFloat
     @Binding var measuredHeight: CGFloat
+    var findController: NotesFindController
+    var accessibilityIdentifier: String
+    var accessibilityLabel: String
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
+            rowID: rowID,
             text: $text,
             measuredHeight: $measuredHeight,
-            minHeight: minHeight
+            minHeight: minHeight,
+            findController: findController
         )
     }
 
@@ -297,26 +345,43 @@ private struct AutoSizingNoteEditor: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 0, height: 6)
         textView.font = NSFont.systemFont(ofSize: fontSize)
         textView.string = text
+        textView.searchRowID = rowID
+        textView.notesFindController = findController
+        textView.setAccessibilityIdentifier(accessibilityIdentifier)
+        textView.setAccessibilityLabel(accessibilityLabel)
         textView.onFrameSizeDidChange = { [weak coordinator = context.coordinator] in
             coordinator?.recalculateHeight()
         }
 
         context.coordinator.textView = textView
+        findController.registerTextView(textView, rowID: rowID)
         context.coordinator.recalculateHeight()
         return textView
     }
 
     func updateNSView(_ nsView: GrowingNoteTextView, context: Context) {
         context.coordinator.updateBindings(
+            rowID: rowID,
             text: $text,
             measuredHeight: $measuredHeight,
-            minHeight: minHeight
+            minHeight: minHeight,
+            findController: findController
         )
+        nsView.searchRowID = rowID
+        nsView.notesFindController = findController
+        nsView.setAccessibilityIdentifier(accessibilityIdentifier)
+        nsView.setAccessibilityLabel(accessibilityLabel)
+        findController.registerTextView(nsView, rowID: rowID)
 
         if nsView.string != text {
             context.coordinator.isApplyingExternalText = true
             nsView.string = text
             context.coordinator.isApplyingExternalText = false
+            findController.handleVisibleTextChange(
+                rowID: rowID,
+                text: text,
+                selectedRange: nsView.selectedRange()
+            )
         }
 
         if nsView.font?.pointSize != fontSize {
@@ -326,31 +391,46 @@ private struct AutoSizingNoteEditor: NSViewRepresentable {
         context.coordinator.recalculateHeight()
     }
 
+    static func dismantleNSView(_ nsView: GrowingNoteTextView, coordinator: Coordinator) {
+        guard let rowID = nsView.searchRowID else { return }
+        coordinator.findController.unregisterTextView(nsView, rowID: rowID)
+    }
+
     final class Coordinator: NSObject, NSTextViewDelegate {
+        var rowID: SlideRowModel.ID
         var text: Binding<String>
         var measuredHeight: Binding<CGFloat>
         var minHeight: CGFloat
+        var findController: NotesFindController
         weak var textView: GrowingNoteTextView?
         var isApplyingExternalText = false
 
         init(
+            rowID: SlideRowModel.ID,
             text: Binding<String>,
             measuredHeight: Binding<CGFloat>,
-            minHeight: CGFloat
+            minHeight: CGFloat,
+            findController: NotesFindController
         ) {
+            self.rowID = rowID
             self.text = text
             self.measuredHeight = measuredHeight
             self.minHeight = minHeight
+            self.findController = findController
         }
 
         func updateBindings(
+            rowID: SlideRowModel.ID,
             text: Binding<String>,
             measuredHeight: Binding<CGFloat>,
-            minHeight: CGFloat
+            minHeight: CGFloat,
+            findController: NotesFindController
         ) {
+            self.rowID = rowID
             self.text = text
             self.measuredHeight = measuredHeight
             self.minHeight = minHeight
+            self.findController = findController
         }
 
         func textDidChange(_ notification: Notification) {
@@ -358,7 +438,20 @@ private struct AutoSizingNoteEditor: NSViewRepresentable {
             if !isApplyingExternalText, text.wrappedValue != textView.string {
                 text.wrappedValue = textView.string
             }
+            findController.handleVisibleTextChange(
+                rowID: rowID,
+                text: textView.string,
+                selectedRange: textView.selectedRange()
+            )
             recalculateHeight()
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView else { return }
+            findController.handleSelectionChange(
+                rowID: rowID,
+                localRange: textView.selectedRange()
+            )
         }
 
         func recalculateHeight() {
@@ -388,12 +481,38 @@ private struct AutoSizingNoteEditor: NSViewRepresentable {
     }
 }
 
-private final class GrowingNoteTextView: NSTextView {
+final class GrowingNoteTextView: NSTextView {
     var onFrameSizeDidChange: (() -> Void)?
+    weak var notesFindController: NotesFindController?
+    var searchRowID: SlideRowModel.ID?
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         onFrameSizeDidChange?()
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let didBecomeFirstResponder = super.becomeFirstResponder()
+        if didBecomeFirstResponder {
+            notesFindController?.handleTextViewBecameFirstResponder(self)
+        }
+        return didBecomeFirstResponder
+    }
+
+    override func performTextFinderAction(_ sender: Any?) {
+        if notesFindController?.performAction(for: sender) == true {
+            return
+        }
+        super.performTextFinderAction(sender)
+    }
+
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(NSResponder.performTextFinderAction(_:)),
+           let result = notesFindController?.validateAction(for: item)
+        {
+            return result
+        }
+        return super.validateUserInterfaceItem(item)
     }
 }
 
@@ -471,6 +590,65 @@ private struct OuterScrollViewBridge: NSViewRepresentable {
     }
 }
 
+private struct FindControllerConfigurator: View {
+    var findController: NotesFindController
+    var snapshots: [SearchableRowSnapshot]
+    var proxy: ScrollViewProxy
+
+    var body: some View {
+        Color.clear
+            .onAppear(perform: synchronize)
+            .onChange(of: snapshots) { _, _ in
+                synchronize()
+            }
+    }
+
+    private func synchronize() {
+        findController.setScrollToRow { rowID in
+            let transaction = Transaction(animation: nil)
+            withTransaction(transaction) {
+                proxy.scrollTo(rowID, anchor: .center)
+            }
+        }
+        findController.updateSearchableRows(snapshots)
+    }
+}
+
+private struct UITestDiagnosticsPanel: View {
+    @Bindable var viewModel: OutlinerViewModel
+
+    var body: some View {
+        HStack(spacing: 1) {
+            UITestDiagnosticValue(
+                identifier: "uiTest.statusMessage",
+                value: viewModel.statusMessage
+            )
+            UITestDiagnosticValue(
+                identifier: "uiTest.find.selectionSignature",
+                value: viewModel.uiTestFindSelectionSignature
+            )
+            UITestDiagnosticValue(
+                identifier: "uiTest.find.pendingRevealRowID",
+                value: viewModel.uiTestFindPendingRevealRowID
+            )
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct UITestDiagnosticValue: View {
+    var identifier: String
+    var value: String
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .accessibilityElement()
+            .accessibilityIdentifier(identifier)
+            .accessibilityValue(Text(value))
+    }
+}
+
 private struct SlideRowTag: View {
     var text: String
     var tint: Color
@@ -522,7 +700,8 @@ private struct ThumbnailCell: View {
 #Preview {
     ContentView(
         viewModel: OutlinerViewModel(),
-        zoomCoordinator: NotesZoomCoordinator()
+        zoomCoordinator: NotesZoomCoordinator(),
+        findController: NotesFindController()
     )
         .frame(width: 1000, height: 700)
 }

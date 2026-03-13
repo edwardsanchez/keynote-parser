@@ -93,6 +93,11 @@ final class OutlinerViewModel {
         static let maxRecents = 12
     }
 
+    private enum LaunchEnvironmentKeys {
+        static let uiTestMode = "KEYNOTE_OUTLINER_UI_TEST_MODE"
+        static let uiTestInputPath = "KEYNOTE_OUTLINER_UI_TEST_INPUT_PATH"
+    }
+
     private(set) var fileURL: URL?
     var rows: [SlideRowModel] = []
     var showSkippedSlides = false
@@ -111,6 +116,9 @@ final class OutlinerViewModel {
     var isConflictDialogPresented = false
     var isExternalUpdateAlertPresented = false
     var conflictMessage = ""
+    let isUITestMode: Bool
+    var uiTestFindSelectionSignature = "-"
+    var uiTestFindPendingRevealRowID = "-"
 
     var hasOpenDocument: Bool { fileURL != nil }
     var hasUnsavedChanges: Bool { rows.contains { $0.isEditable && $0.isDirty } }
@@ -138,12 +146,33 @@ final class OutlinerViewModel {
     private let backend = KeynoteBackendClient()
 
     init() {
-        startFileMonitor()
+        isUITestMode = Self.isUITestModeEnabled()
+        if !isUITestMode {
+            startFileMonitor()
+        }
         loadPersistedRecents()
         loadPersistedNoteFontSize()
+        let launchInputURL = Self.launchInputURL()
         Task { [weak self] in
-            self?.reopenLastOpenedFileIfAvailable()
+            guard let self else { return }
+            if let launchInputURL {
+                self.loadDocument(from: launchInputURL)
+            } else {
+                self.reopenLastOpenedFileIfAvailable()
+            }
         }
+    }
+
+    func updateFindDebugState(
+        selectedRowID: SlideRowModel.ID?,
+        globalRange: NSRange?,
+        pendingRevealRowID: SlideRowModel.ID?
+    ) {
+        guard isUITestMode else { return }
+        let rowToken = selectedRowID ?? "-"
+        let rangeToken = globalRange.map { "\($0.location):\($0.length)" } ?? "-"
+        uiTestFindSelectionSignature = "\(rowToken)|\(rangeToken)"
+        uiTestFindPendingRevealRowID = pendingRevealRowID ?? "-"
     }
 
     func increaseNoteFontSize() {
@@ -735,6 +764,22 @@ final class OutlinerViewModel {
     private static func clampNoteFontSize(_ value: CGFloat) -> CGFloat {
         guard value.isFinite else { return defaultNoteFontSize }
         return min(max(value, minNoteFontSize), maxNoteFontSize)
+    }
+
+    private static func isUITestModeEnabled() -> Bool {
+        ProcessInfo.processInfo.environment[LaunchEnvironmentKeys.uiTestMode] == "1"
+    }
+
+    private static func launchInputURL() -> URL? {
+        guard let path = ProcessInfo.processInfo.environment[LaunchEnvironmentKeys.uiTestInputPath] else {
+            return nil
+        }
+
+        let url = URL(fileURLWithPath: path).standardizedFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        return url
     }
 
     private func reopenLastOpenedFileIfAvailable() {
